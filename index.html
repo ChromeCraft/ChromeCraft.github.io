@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+<meta content="text/html;charset=utf-8" http-equiv="Content-Type">
+<meta content="utf-8" http-equiv="encoding">
+<title>Mineblock</title>
+<script type="text/javascript" src="typedarray.js"></script>
+<script type="text/javascript" src="gl-matrix-min.js"></script>
+<script type="text/javascript" src="main.js"></script>
+
+<script id="wireframe-vs" type="x-shader/x-vertex"> attribute vec3 aPos; uniform mat4 uMVMatrix; uniform mat4 uPMatrix; void main(void){gl_Position=uPMatrix * uMVMatrix * vec4(aPos, 1.0);}</script><script id="wireframe-fs" type="x-shader/x-fragment"> precision mediump float; void main(void){gl_FragColor=vec4(0.0, 0.0, 0.0, 1.0);}</script><script id="particle-vs" type="x-shader/x-vertex"> attribute vec3 aInitialPos; attribute vec3 aVelocity; attribute float aBirthday; attribute vec2 aTexCoord; uniform float uClock; uniform float uGravity; uniform mat4 uMVMatrix; uniform mat4 uPMatrix; varying vec2 vTexCoord; void main(void){vTexCoord=aTexCoord; if (aBirthday > uClock){gl_Position=vec4(-9999.0, -9999.0, -9999.0, 1.0);}else{float age=uClock - aBirthday; vec3 pos=aInitialPos + age * aVelocity; pos.y -=0.5 * uGravity * age * age; if (uClock==aBirthday) pos.y +=3.0; gl_Position=uPMatrix * uMVMatrix * vec4(pos, 1.0); gl_PointSize=70.0 / gl_Position.z;}}</script><script id="particle-fs" type="x-shader/x-fragment"> precision mediump float; uniform sampler2D uSampler; varying vec2 vTexCoord; void main(void){vec2 coord=(vTexCoord + 4.0 * gl_PointCoord) / 256.0; coord.t=1.0 - coord.t; gl_FragColor=texture2D(uSampler, coord); if (gl_FragColor.a <=0.5) discard;}</script><script id="main-vs" type="x-shader/x-vertex"> precision mediump float; attribute vec3 aPos; attribute vec2 aTexCoord; attribute vec4 aLighting; attribute vec3 aColor; uniform mat4 uMVMatrix; uniform mat4 uPMatrix; uniform float uFogDistance; uniform float uSunlight; const float lightScale=7.8; const vec3 minLight=vec3(0.2, 0.2, 0.2); varying vec2 vTexCoord; varying vec3 vLighting; varying float vFog; void main(void){gl_Position=uPMatrix * uMVMatrix * vec4(aPos, 1.0); vTexCoord=aTexCoord / 16.0; vTexCoord.t=1.0 - vTexCoord.t; vLighting=minLight + aColor * max(aLighting.xyz, uSunlight * vec3(aLighting.w, aLighting.w, aLighting.w)) / lightScale; float z=abs(gl_Position.z); vFog=clamp(1.0 - exp(-z*z / (uFogDistance * uFogDistance)), 0.0, 1.0);}</script><script id="main-fs" type="x-shader/x-fragment"> precision mediump float; varying vec2 vTexCoord; varying vec3 vLighting; varying float vFog; uniform sampler2D uSampler; uniform float uSunlight; const vec4 kFogColor=vec4(0.5, 0.8, 0.98, 1.0); void main(void){vec4 textureColor=texture2D(uSampler, vTexCoord); if (textureColor.a <=0.5){discard;}else{textureColor=vec4(textureColor.rgb * vLighting, textureColor.a); textureColor=vFog * uSunlight * kFogColor + (1.0 - vFog) * textureColor; gl_FragColor=textureColor;}}</script><script id="twodee-vs" type="x-shader/x-vertex"> attribute vec2 aPosition; uniform vec2 uResolution; void main(){vec2 reposition=(2.0 * aPosition / uResolution - 1.0) * vec2(1,-1); gl_Position=vec4(reposition, 0, 1);}</script><script id="twodee-fs" type="x-shader/x-fragment"> precision mediump float; uniform vec4 uColor; void main(){gl_FragColor=uColor;}</script><script id="blur-vs" type="x-shader/x-vertex"> attribute vec2 aPos; varying vec2 vTexCoord; void main(void){gl_Position=vec4(sign(aPos), 0.0, 1.0); vTexCoord=sign(aPos) * 0.5 + 0.5;}</script><script id="blur-box-fs" type="x-shader/x-fragment"> precision mediump float; uniform sampler2D uSrc; uniform vec2 uResolution; varying vec2 vTexCoord; void main(){gl_FragColor=4.0/9.0 * texture2D(uSrc, vTexCoord + vec2(-0.5, -0.5) / uResolution) + 2.0/9.0 * texture2D(uSrc, vTexCoord + vec2(-0.5, +0.5) / uResolution) + 2.0/9.0 * texture2D(uSrc, vTexCoord + vec2(+0.5, -0.5) / uResolution) + 1.0/9.0 * texture2D(uSrc, vTexCoord + vec2(+1.0, +1.0) / uResolution);}</script><script id="skybox-vs" type="x-shader/x-vertex"> attribute vec3 aPos; void main(void){gl_Position=vec4(aPos, 1.0);}</script><script id="panorama-fs" type="x-shader/x-fragment"> precision mediump float; uniform vec2 uViewport; uniform mat4 uInvProj; uniform mat3 uInvViewRot; uniform samplerCube uSampler; const int kOversampling=3; const float kPanoPixelsPerScreenPixel=854. / (110. / 360.) / (256. * 4.); void main(void){vec4 color=vec4(0); for (int i=0; i < kOversampling; ++i){for (int j=0; j < kOversampling; ++j){vec2 pixel=gl_FragCoord.xy + kPanoPixelsPerScreenPixel * vec2(i, j); vec2 frag_coord=2.0 * pixel / uViewport - 1.0; vec4 device_normal=vec4(frag_coord, 0.0, 1.0); vec3 eye_normal=normalize((uInvProj * device_normal).xyz); vec3 world_normal=normalize(uInvViewRot * eye_normal); color +=textureCube(uSampler, world_normal);}}gl_FragColor=color / float(kOversampling * kOversampling);}</script><script id="sky-fs" type="x-shader/x-fragment"> precision mediump float; uniform vec2 uViewport; uniform mat4 uInvProj; uniform mat3 uInvViewRot; uniform float uTimeOfDay; const vec4 skyColor=vec4(0.5, 0.8, 0.98, 1.0); const float sunset=0.2; void main(void){vec2 frag_coord=2.0 * gl_FragCoord.xy / uViewport - 1.0; vec4 device_normal=vec4(frag_coord, 0.0, 1.0); vec3 eye_normal=normalize((uInvProj * device_normal).xyz); vec3 world_normal=normalize(uInvViewRot*eye_normal); float sunlight=0.5 - cos(uTimeOfDay) / 2.0; gl_FragColor=skyColor; float d=abs(dot(world_normal, vec3(0.0, 1.0, 0.0))) / sunset; if (d < 1.0){float sunsetty=1.0 - abs(sin(uTimeOfDay)); vec4 redness=mix(vec4(1,0,0,1), skyColor, sunsetty); gl_FragColor=sunlight * mix(redness, skyColor, d);}else{gl_FragColor=sunlight * skyColor;}}</script><style>body{height:480px width:854px;margin:0px;padding:0px;background-color: black;}#canvas_container{position: relative; margin: auto auto;}#canvas_container, div.page{width: 854px; height: 480px;}#canvas_container:-webkit-full-screen,:-webkit-full-screen #canvas,:-webkit-full-screen #hud,:-webkit-full-screen #options,:-webkit-full-screen #stats{width: 100%; height: 100%;}div.page{display: none; font-size: 18px; position: absolute; top: 0; left: 0; color: white; text-align: center;}*{font-family: Verdana;}.msg{text-align: center; font-size: 32px; height: 40px; left: 0; margin-top: 15%; margin-bottom: 5%;}button{font-size: 18px; width: 220px; height: 33px; color: black; display: block; margin: 6px auto;cursor:pointer;}#instructions{font-size:16px;}#failinit{position: absolute; left: 50%; top: 55%; width: 70%; margin-left: -35%; margin-top: -24px; height: 48px; font-size: 20px; color: red; text-align: center; display: none;}#newgame{margin-top: 20%;}.logo{position: absolute; left: 50%; top: 60px; width: 548px; height: 93px; margin-left: -274px; transition: opacity 1s ease-in-out; -moz-transition: opacity 1s ease-in-out; -webkit-transition: opacity 1s ease-in-out;}#throbber{position: absolute; left: 58%; width: 300px; text-align: center; top: 100px; font-size: 30px; -webkit-transform: rotate(-18deg); -moz-transform: rotate(-18deg); color: yellow; text-shadow: 3px 3px 2px #222; animation: pulse 0.27s ease-in-out 0s infinite alternate; -moz-animation: pulse 0.27s ease-in-out 0s infinite alternate; -webkit-animation: pulse 0.27s ease-in-out 0s infinite alternate;}@keyframes pulse{0%{transform: scale(1,1) rotate(-19deg);}100%{transform: scale(1.07,1.07) rotate(-19deg);}}@-webkit-keyframes pulse{0%{-webkit-transform: scale(1,1) rotate(-19deg);}100%{-webkit-transform: scale(1.07,1.07) rotate(-19deg);}}@-moz-keyframes pulse{0%{-moz-transform: scale(1,1) rotate(-19deg);}100%{-moz-transform: scale(1.07,1.07) rotate(-19deg);}}.toolbox{position: absolute; width: 48px; height: 48px; border: solid 2px rgb(128, 128, 128); background: rgba(128, 128, 128, 0.5);}#toolbox{left: 16px; bottom: 3.33%;}.tool{background: transparent;}#held{position: absolute; z-index: 2; pointer-events: none;}#terrain{display: none;}#chat{position: absolute; height: 83%; top: 0; left: 16px; color: white; overflow-y: hidden;}#clog{height: 400px;}#options div{margin-top: 1em; margin-left: 1em; text-align: left;}#stats{margin-top: 1em; margin-left: 1em; text-align: left;}a, a:visited{text-decoration:none;} #footer{position:absolute;top:388px;left:50%;margin-left:-373px;width:746px;height:90px;overflow:hidden;}#header{position:absolute;top:0px;left:50%;margin-left:-234px;width:488px;height:65px;overflow:hidden;}#pause{top:165px;height:315px;}</style>
+
+</head>
+
+<body>
+  <div id="canvas_container">
+    <canvas id="canvas" width="854" height="480"></canvas>
+    <div id="hud" class="page">
+      <div id="chat"><div id="clog">&nbsp;</div></div>
+    </div>
+    <div id="stats" class="page"></div>
+    <div id="options" class="page">
+      <div style='font-size:24px'>Options</div>
+      <div>
+        <input id="anisotropic" type="checkbox">
+        <label for="anisotropic">Anisotropic filtering</label>
+      </div>
+      <div>
+        Chunk generation distance:<br>
+        <input type="radio" name="rdist" value="0">Off<br>
+        <input type="radio" name="rdist" value="2">Very Near Indeed<br>
+        <input type="radio" name="rdist" value="16" checked>Near<br>
+        <input type="radio" name="rdist" value="32">Medium<br>
+        <input type="radio" name="rdist" value="64">Far</br>
+      </div>
+      <div><button id="resumegame2">Done</button></div>
+    </div>
+    <div id="title" class="page">
+      <div class="logo"><img src="http://www.funhtml5games.com/mineblock/logo.png"></div>
+      <div id="throbber"></div>
+
+      <div id="failinit"></div>
+      <button id="newgame">New Game</button>
+      <button id="loadgame">Load Game</button>
+      <a href="http://funhtml5games.com/" target="_BLANK" style="padding:0px;border:none;"><button id="moregame">More Games</button></a>
+      <div id="instructions">
+      Move using WASD/Cursor keys and mouse - SPACE to jump<br>
+      Left/right click to place/mine items - I = Inventory<br>
+      1-9 = Select item slots - T = Throw item - C = Add tree<br>
+      Y = Options - CTRL-S = Save - CTRL-L = Load - F1 = HUD<br>
+      ESC - Pause game/see these instructions again
+      </div>
+      <div id="header"><script data-cfasync="false" type="text/javascript" src="http://www.tradeadexchange.com/a/display.php?r=968263"></script></div>
+      <div id="footer"><script data-cfasync="false" type="text/javascript" src="http://www.tradeadexchange.com/a/display.php?r=1133423"></script></div>
+    </div>
+    <div id="pause" class="page">
+      <button id="resumegame">Return to Game</button>
+      <button id="savegame">Save Game &amp; Quit</button>
+      <button id="quitgame">Quit Game</button>
+      <br>
+    </div>
+    <div id="loading" class="page">
+      <div class="msg">Generating Terrain...</div>
+    </div>
+    <div id="dead" class="page">
+      <div class="msg">You died.</div>
+      <button id="respawn">Respawn</button>
+      <button id="quitgame2">Quit Game</button>
+    </div>
+    <div id="inventory" class="page">
+      <canvas id="held" class="tool" width="48" height="48"></canvas>
+    </div>
+  </div>
+  <img src="terrain.png" id="terrain">
+
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-55882227-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+</body>
+
+</html>
